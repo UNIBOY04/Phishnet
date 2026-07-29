@@ -1,0 +1,6 @@
+model,accuracy,precision,recall,f1
+RandomForest,1.0,1.0,1.0,1.0
+GradientBoosting,1.0,1.0,1.0,1.0
+DecisionTree,1.0,1.0,1.0,1.0
+LogisticRegression,1.0,1.0,1.0,1.0
+SVM,1.0,1.0,1.0,1.0
