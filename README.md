@@ -1,3 +1,7 @@
+## 🔗 Live Demo
+**Try it here:** https://phishnet-1-8fij.onrender.com
+*(Free hosting — if the site was idle, it may take ~30-50 seconds to wake up on first load.)*
+
 # AI-Based Phishing URL Detection
 
 A complete, working phishing detector that classifies URLs as **phishing**
