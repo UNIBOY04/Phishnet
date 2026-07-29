@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PhishNet — URL Threat Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070b14;
+    --bg-1:#0c1220;
+    --panel:#0f1729;
+    --panel-2:#141d33;
+    --border:rgba(148,163,184,.14);
+    --border-soft:rgba(148,163,184,.08);
+    --text:#e8edf7;
+    --text-dim:#9aa8c2;
+    --text-faint:#5f6d89;
+    --safe:#34d399;
+    --safe-glow:rgba(52,211,153,.35);
+    --danger:#fb5266;
+    --danger-glow:rgba(251,82,102,.35);
+    --primary:#5eb1ff;
+    --primary-glow:rgba(94,177,255,.35);
+    --amber:#f5b942;
+    --radius:18px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  h1,h2,h3,.display{ font-family:'Space Grotesk',sans-serif; letter-spacing:-0.01em; }
+  .mono{ font-family:'JetBrains Mono',monospace; }
+  a{ color:inherit; }
+  ::selection{ background:var(--primary-glow); }
+
+  #bgcanvas{
+    position:fixed; inset:0; z-index:0; opacity:.55;
+    pointer-events:none;
+  }
+
+  .wrap{ max-width:1120px; margin:0 auto; padding:0 24px; position:relative; z-index:1; }
+
+  /* ---------- NAV ---------- */
+  nav{
+    position:sticky; top:0; z-index:50;
+    backdrop-filter:blur(14px);
+    background:rgba(7,11,20,.72);
+    border-bottom:1px solid var(--border-soft);
+  }
+  nav .wrap{ display:flex; align-items:center; justify-content:space-between; height:68px; }
+  .brand{ display:flex; align-items:center; gap:10px; font-weight:700; font-size:19px; }
+  .brand svg{ width:26px; height:26px; }
+  .navlinks{ display:flex; gap:28px; font-size:14px; color:var(--text-dim); }
+  .navlinks a{ text-decoration:none; transition:color .2s; }
+  .navlinks a:hover{ color:var(--primary); }
+
+  /* ---------- HERO ---------- */
+  header.hero{ padding:88px 0 40px; position:relative; }
+  .hero-grid{
+    display:grid; grid-template-columns:1.05fr .95fr; gap:56px; align-items:center;
+  }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.08em;
+    color:var(--primary); text-transform:uppercase;
+    background:rgba(94,177,255,.08); border:1px solid rgba(94,177,255,.25);
+    padding:6px 12px; border-radius:100px; margin-bottom:22px;
+  }
+  .eyebrow .dot{ width:6px; height:6px; border-radius:50%; background:var(--safe); box-shadow:0 0 8px var(--safe-glow); animation:pulse 1.8s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+
+  h1.headline{ font-size:52px; line-height:1.04; font-weight:700; margin:0 0 20px; }
+  h1.headline .accent{ color:var(--primary); }
+  .sub{ font-size:17px; color:var(--text-dim); line-height:1.65; max-width:480px; margin-bottom:28px; }
+  .trust-row{ display:flex; gap:22px; flex-wrap:wrap; }
+  .trust-item{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-faint); }
+  .trust-item svg{ width:16px; height:16px; color:var(--text-faint); }
+
+  /* ---------- SCANNER CARD (3D tilt + radar glow) ---------- */
+  .scanner-outer{ perspective:1200px; }
+  .scanner{
+    position:relative;
+    background:linear-gradient(155deg, var(--panel-2), var(--panel));
+    border:1px solid var(--border);
+    border-radius:24px;
+    padding:32px;
+    transform-style:preserve-3d;
+    transition:transform .12s ease-out, box-shadow .3s;
+    box-shadow:0 30px 60px -20px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.02) inset;
+    will-change:transform;
+  }
+  .scanner::before{
+    content:''; position:absolute; inset:-1px; border-radius:24px; padding:1px;
+    background:conic-gradient(from var(--sweep,0deg), transparent 0deg, var(--primary) 25deg, transparent 70deg, transparent 360deg);
+    -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor; mask-composite:exclude;
+    animation:sweep 4.5s linear infinite; opacity:.85; pointer-events:none;
+  }
+  @keyframes sweep{ to{ --sweep:360deg; } }
+  @property --sweep{ syntax:'<angle>'; inherits:false; initial-value:0deg; }
+
+  .scanner-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:18px; transform:translateZ(30px); }
+  .scanner-head .label{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-faint); letter-spacing:.06em; text-transform:uppercase; }
+  .status-chip{ display:flex; align-items:center; gap:6px; font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--safe); }
+  .status-chip .dot{ width:6px; height:6px; border-radius:50%; background:var(--safe); box-shadow:0 0 6px var(--safe-glow); }
+
+  .scan-form{ transform:translateZ(30px); }
+  .input-row{ display:flex; gap:10px; }
+  .input-row input{
+    flex:1; background:var(--bg-1); border:1px solid var(--border);
+    color:var(--text); font-family:'JetBrains Mono',monospace; font-size:14px;
+    padding:15px 16px; border-radius:12px; outline:none; transition:border-color .2s, box-shadow .2s;
+  }
+  .input-row input::placeholder{ color:var(--text-faint); }
+  .input-row input:focus{ border-color:var(--primary); box-shadow:0 0 0 3px rgba(94,177,255,.15); }
+  .scan-btn{
+    background:var(--primary); color:#04101f; border:none; border-radius:12px;
+    padding:0 22px; font-weight:600; font-size:14px; cursor:pointer;
+    display:flex; align-items:center; gap:8px; transition:transform .15s, box-shadow .15s;
+    box-shadow:0 8px 20px -6px var(--primary-glow);
+  }
+  .scan-btn:hover{ transform:translateY(-1px); box-shadow:0 12px 26px -6px var(--primary-glow); }
+  .scan-btn:active{ transform:translateY(0); }
+  .scan-btn:disabled{ opacity:.6; cursor:default; transform:none; }
+  .hint{ margin-top:12px; font-size:12px; color:var(--text-faint); }
+  .error-box{
+    margin-top:14px; padding:12px 14px; border-radius:10px; font-size:13px;
+    background:rgba(251,82,102,.08); border:1px solid rgba(251,82,102,.3); color:#ffb3bd; display:none;
+  }
+
+  /* ---------- RESULT ---------- */
+  .result{
+    margin-top:22px; transform:translateZ(30px);
+    display:none; opacity:0; transform:translateZ(30px) translateY(8px);
+    transition:opacity .35s, transform .35s;
+  }
+  .result.show{ display:block; opacity:1; transform:translateZ(30px) translateY(0); }
+  .result-top{ display:flex; align-items:center; gap:18px; padding-bottom:18px; border-bottom:1px solid var(--border-soft); }
+
+  .gauge{ position:relative; width:96px; height:96px; flex:none; }
+  .gauge svg{ transform:rotate(-90deg); }
+  .gauge-track{ fill:none; stroke:var(--border); stroke-width:8; }
+  .gauge-fill{ fill:none; stroke-width:8; stroke-linecap:round; transition:stroke-dasharray .8s cubic-bezier(.4,0,.2,1), stroke .3s; }
+  .gauge-num{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; }
+  .gauge-num .pct{ font-family:'JetBrains Mono',monospace; font-weight:600; font-size:18px; }
+  .gauge-num .pct-label{ font-size:9px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em; }
+
+  .verdict-text .verdict-badge{
+    display:inline-block; font-family:'JetBrains Mono',monospace; font-size:11px; letter-spacing:.06em;
+    padding:4px 10px; border-radius:6px; text-transform:uppercase; margin-bottom:6px; font-weight:600;
+  }
+  .verdict-badge.phishing{ background:rgba(251,82,102,.12); color:var(--danger); border:1px solid rgba(251,82,102,.35); }
+  .verdict-badge.legitimate{ background:rgba(52,211,153,.12); color:var(--safe); border:1px solid rgba(52,211,153,.35); }
+  .verdict-url{ font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--text-dim); word-break:break-all; }
+
+  .reasons{ margin-top:16px; display:flex; flex-direction:column; gap:9px; }
+  .reason{ display:flex; align-items:flex-start; gap:10px; font-size:13.5px; color:var(--text-dim); line-height:1.5; }
+  .reason .rdot{ flex:none; width:16px; height:16px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+  .reason.bad .rdot{ background:rgba(251,82,102,.15); color:var(--danger); }
+  .reason.warn .rdot{ background:rgba(245,185,66,.15); color:var(--amber); }
+  .reason.good .rdot{ background:rgba(52,211,153,.15); color:var(--safe); }
+
+  /* ---------- SECTION SHARED ---------- */
+  section{ padding:80px 0; position:relative; }
+  .section-head{ max-width:600px; margin-bottom:44px; }
+  .section-eyebrow{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--primary); text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
+  .section-title{ font-size:32px; font-weight:700; margin:0 0 12px; }
+  .section-desc{ color:var(--text-dim); font-size:15.5px; line-height:1.7; }
+
+  /* ---------- HOW IT WORKS (3D flip cards) ---------- */
+  .flip-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:22px; }
+  .flip-card{ perspective:1000px; height:190px; }
+  .flip-inner{
+    position:relative; width:100%; height:100%; transform-style:preserve-3d;
+    transition:transform .6s cubic-bezier(.4,.2,.2,1);
+  }
+  .flip-card:hover .flip-inner{ transform:rotateY(180deg); }
+  .flip-face{
+    position:absolute; inset:0; backface-visibility:hidden; border-radius:16px;
+    border:1px solid var(--border); padding:26px; display:flex; flex-direction:column; justify-content:space-between;
+  }
+  .flip-front{ background:var(--panel); }
+  .flip-back{ background:linear-gradient(155deg,var(--panel-2),var(--panel)); transform:rotateY(180deg); }
+  .flip-num{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-faint); }
+  .flip-title{ font-size:17px; font-weight:600; }
+  .flip-icon{ width:30px; height:30px; color:var(--primary); }
+  .flip-back p{ font-size:13.5px; color:var(--text-dim); line-height:1.6; margin:0; }
+
+  /* ---------- WHAT IS PHISHING ---------- */
+  .phish-explainer{
+    display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:start;
+  }
+  .phish-explainer p{ color:var(--text-dim); font-size:15.5px; line-height:1.75; margin:0 0 16px; }
+  .phish-explainer strong{ color:var(--text); }
+
+  .checklist{ display:flex; flex-direction:column; gap:14px; }
+  .check-item{
+    display:flex; gap:12px; align-items:flex-start; padding:14px 16px;
+    background:var(--panel); border:1px solid var(--border); border-radius:12px;
+  }
+  .check-item svg{ width:18px; height:18px; color:var(--danger); flex:none; margin-top:2px; }
+  .check-item div b{ display:block; font-size:14px; margin-bottom:2px; }
+  .check-item div span{ font-size:12.5px; color:var(--text-faint); }
+
+  /* ---------- ATTACK TYPES (tilt cards) ---------- */
+  .type-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:18px; margin-top:52px; }
+  .type-card{
+    perspective:800px;
+  }
+  .type-card-inner{
+    background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:22px;
+    transition:transform .25s, border-color .25s, box-shadow .25s;
+    transform-style:preserve-3d;
+  }
+  .type-card:hover .type-card-inner{
+    transform:rotateX(6deg) rotateY(-6deg) translateZ(6px);
+    border-color:rgba(94,177,255,.35);
+    box-shadow:0 20px 40px -14px rgba(0,0,0,.55);
+  }
+  .type-card-inner .ticon{ font-size:22px; margin-bottom:12px; display:block; }
+  .type-card-inner h4{ margin:0 0 6px; font-size:14.5px; }
+  .type-card-inner p{ margin:0; font-size:12.5px; color:var(--text-faint); line-height:1.55; }
+
+  /* ---------- FOOTER ---------- */
+  footer{ border-top:1px solid var(--border-soft); padding:36px 0; }
+  footer .wrap{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px; }
+  footer .disclaimer{ font-size:12.5px; color:var(--text-faint); max-width:560px; line-height:1.6; }
+  footer .fbrand{ font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--text-dim); }
+
+  @media (max-width:880px){
+    .hero-grid{ grid-template-columns:1fr; }
+    h1.headline{ font-size:38px; }
+    .flip-grid{ grid-template-columns:1fr; }
+    .type-grid{ grid-template-columns:repeat(2,1fr); }
+    .phish-explainer{ grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bgcanvas"></canvas>
+
+<nav>
+  <div class="wrap">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 2L4 5v6c0 5.2 3.4 9.9 8 11 4.6-1.1 8-5.8 8-11V5l-8-3z" fill="url(#g1)"/><path d="M9 12.2l2 2 4-4.2" stroke="#04101f" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><defs><linearGradient id="g1" x1="4" y1="2" x2="20" y2="22"><stop stop-color="#5eb1ff"/><stop offset="1" stop-color="#34d399"/></linearGradient></defs></svg>
+      PhishNet
+    </div>
+    <div class="navlinks">
+      <a href="#scan">Scanner</a>
+      <a href="#how">How it works</a>
+      <a href="#learn">What is phishing?</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="scan">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow"><span class="dot"></span> Model &amp; artifacts loaded from /artifacts</div>
+      <h1 class="headline">Is that link<br><span class="accent">safe to click?</span></h1>
+      <p class="sub">Paste any URL and a trained classifier scores it in real time using URL structure, domain characteristics, and obfuscation signals — no external blocklist, no page needs to load first.</p>
+      <div class="trust-row">
+        <div class="trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l8 3v6c0 5-3.4 9.5-8 11-4.6-1.5-8-6-8-11V5l8-3z"/></svg> Runs locally</div>
+        <div class="trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg> Instant scoring</div>
+        <div class="trust-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> Explains its verdict</div>
+      </div>
+    </div>
+
+    <div class="scanner-outer">
+      <div class="scanner" id="scannerCard">
+        <div class="scanner-head">
+          <span class="label">URL Threat Scanner</span>
+          <span class="status-chip"><span class="dot"></span> ready</span>
+        </div>
+        <form class="scan-form" id="scanForm">
+          <div class="input-row">
+            <input type="text" id="urlInput" class="mono" placeholder="paste-a-url-here.com/login" autocomplete="off" />
+            <button class="scan-btn" type="submit" id="scanBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+              Scan
+            </button>
+          </div>
+          <div class="hint">Try it on a suspicious-looking link, or a site you trust, to see how the score is built.</div>
+          <div class="error-box" id="errorBox"></div>
+        </form>
+
+        <div class="result" id="result">
+          <div class="result-top">
+            <div class="gauge">
+              <svg width="96" height="96" viewBox="0 0 96 96">
+                <circle class="gauge-track" cx="48" cy="48" r="40"></circle>
+                <circle class="gauge-fill" id="gaugeFill" cx="48" cy="48" r="40" stroke="#34d399" stroke-dasharray="0 251"></circle>
+              </svg>
+              <div class="gauge-num"><span class="pct mono" id="pctNum">0%</span><span class="pct-label">risk</span></div>
+            </div>
+            <div class="verdict-text">
+              <span class="verdict-badge" id="verdictBadge">—</span>
+              <div class="verdict-url mono" id="verdictUrl"></div>
+            </div>
+          </div>
+          <div class="reasons" id="reasonsList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="how">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Under the hood</div>
+      <h2 class="section-title">How the scan works</h2>
+      <p class="section-desc">No page ever has to load. The whole decision is made from the shape of the URL string itself, which is why it works even on brand-new phishing domains.</p>
+    </div>
+    <div class="flip-grid">
+      <div class="flip-card">
+        <div class="flip-inner">
+          <div class="flip-face flip-front">
+            <div class="flip-num">01</div>
+            <div>
+              <svg class="flip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h10M4 18h6"/></svg>
+              <div class="flip-title" style="margin-top:10px;">Extract features</div>
+            </div>
+          </div>
+          <div class="flip-face flip-back">
+            <p>~25 signals are pulled from the URL: length, symbol counts, entropy, IP-as-host, suspicious keywords, brand impersonation in the subdomain, and more.</p>
+          </div>
+        </div>
+      </div>
+      <div class="flip-card">
+        <div class="flip-inner">
+          <div class="flip-face flip-front">
+            <div class="flip-num">02</div>
+            <div>
+              <svg class="flip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+              <div class="flip-title" style="margin-top:10px;">Score with ML</div>
+            </div>
+          </div>
+          <div class="flip-face flip-back">
+            <p>Five models (Random Forest, Gradient Boosting, Decision Tree, Logistic Regression, SVM) are compared at training time; the best performer by F1 score is kept.</p>
+          </div>
+        </div>
+      </div>
+      <div class="flip-card">
+        <div class="flip-inner">
+          <div class="flip-face flip-front">
+            <div class="flip-num">03</div>
+            <div>
+              <svg class="flip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2l8 3v6c0 5-3.4 9.5-8 11-4.6-1.5-8-6-8-11V5l8-3z"/></svg>
+              <div class="flip-title" style="margin-top:10px;">Explain the verdict</div>
+            </div>
+          </div>
+          <div class="flip-face flip-back">
+            <p>Alongside the probability, the specific red or green flags that drove the score — like a missing HTTPS or an IP-address host — are surfaced in plain language.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="learn">
+  <div class="wrap">
+    <div class="section-head">
+      <div class="section-eyebrow">Background</div>
+      <h2 class="section-title">What is phishing, exactly?</h2>
+    </div>
+    <div class="phish-explainer">
+      <div>
+        <p><strong>Phishing</strong> is a social-engineering attack where someone impersonates a trusted person, brand, or service — usually by email, text, or a fake website — to trick a victim into handing over credentials, payment details, or access to a system.</p>
+        <p>It doesn't rely on breaking encryption or exploiting software bugs. It relies on <strong>human trust and urgency</strong>: a login page that looks exactly like your bank's, a message claiming your account will be suspended in an hour, a link from what looks like a coworker.</p>
+        <p>Because the barrier to entry is low and the payoff is high, phishing remains one of the most common ways attackers get an initial foothold — into personal accounts and into companies.</p>
+      </div>
+      <div class="checklist">
+        <div class="check-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4M12 17h.01M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+          <div><b>Mismatched or lookalike domain</b><span>paypal-secure-login.com is not paypal.com.</span></div>
+        </div>
+        <div class="check-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4M12 17h.01M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+          <div><b>Urgency or fear</b><span>"Your account will be locked in 24 hours" is designed to stop you from thinking.</span></div>
+        </div>
+        <div class="check-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4M12 17h.01M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+          <div><b>Requests for credentials</b><span>Legitimate services rarely ask you to "confirm your password" via a link.</span></div>
+        </div>
+        <div class="check-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 9v4M12 17h.01M10.3 3.9L2.5 17a2 2 0 001.7 3h15.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+          <div><b>Odd sender or IP-based links</b><span>An address as the host, or a domain that doesn't match the sender, is a strong signal.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="type-grid">
+      <div class="type-card"><div class="type-card-inner"><span class="ticon">📧</span><h4>Email phishing</h4><p>Mass, generic messages impersonating a brand, sent to as many inboxes as possible.</p></div></div>
+      <div class="type-card"><div class="type-card-inner"><span class="ticon">🎯</span><h4>Spear phishing</h4><p>Targeted at one person or company using details researched about them specifically.</p></div></div>
+      <div class="type-card"><div class="type-card-inner"><span class="ticon">💬</span><h4>Smishing</h4><p>The same trick delivered by SMS text message, often with a shortened link.</p></div></div>
+      <div class="type-card"><div class="type-card-inner"><span class="ticon">☎️</span><h4>Vishing</h4><p>A phone call impersonating support staff or a bank to extract information verbally.</p></div></div>
+      <div class="type-card"><div class="type-card-inner"><span class="ticon">🪞</span><h4>Clone phishing</h4><p>A near-identical copy of a real email or site, with the link swapped for a malicious one.</p></div></div>
+      <div class="type-card"><div class="type-card-inner"><span class="ticon">🎣</span><h4>Whaling</h4><p>Spear phishing aimed at executives, often to authorize a fraudulent payment or transfer.</p></div></div>
+      <div class="type-card"><div class="type-card-inner"><span class="ticon">🌐</span><h4>Pharming</h4><p>Redirecting a legitimate-looking address to a fake site at the DNS level, not the link.</p></div></div>
+      <div class="type-card"><div class="type-card-inner"><span class="ticon">🔗</span><h4>Link manipulation</h4><p>Using shorteners, @ symbols, or lookalike characters so the real destination is hidden.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="fbrand">PhishNet</div>
+    <div class="disclaimer">Educational / portfolio project. Scores are a probability from a trained model, not a guarantee — always use your own judgment alongside tools like this, and never enter real credentials to test a suspicious link.</div>
+  </div>
+</footer>
+
+<script>
+// ---------- Background particle network ----------
+(function(){
+  const canvas = document.getElementById('bgcanvas');
+  const ctx = canvas.getContext('2d');
+  let w, h, particles = [];
+  const COUNT = 55, LINK_DIST = 130;
+
+  function resize(){
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = Math.max(window.innerHeight, document.body.scrollHeight * 0.6);
+  }
+  function init(){
+    particles = Array.from({length: COUNT}, () => ({
+      x: Math.random()*w, y: Math.random()*h,
+      vx: (Math.random()-0.5)*0.25, vy: (Math.random()-0.5)*0.25
+    }));
+  }
+  function step(){
+    ctx.clearRect(0,0,w,h);
+    for(const p of particles){
+      p.x += p.vx; p.y += p.vy;
+      if(p.x < 0 || p.x > w) p.vx *= -1;
+      if(p.y < 0 || p.y > h) p.vy *= -1;
+    }
+    for(let i=0;i<particles.length;i++){
+      for(let j=i+1;j<particles.length;j++){
+        const a = particles[i], b = particles[j];
+        const dx=a.x-b.x, dy=a.y-b.y, dist=Math.sqrt(dx*dx+dy*dy);
+        if(dist < LINK_DIST){
+          ctx.strokeStyle = `rgba(94,177,255,${0.12*(1-dist/LINK_DIST)})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+        }
+      }
+    }
+    for(const p of particles){
+      ctx.fillStyle = 'rgba(148,163,184,0.5)';
+      ctx.beginPath(); ctx.arc(p.x,p.y,1.4,0,Math.PI*2); ctx.fill();
+    }
+    requestAnimationFrame(step);
+  }
+  window.addEventListener('resize', resize);
+  resize(); init(); step();
+})();
+
+// ---------- 3D tilt on the scanner card ----------
+(function(){
+  const card = document.getElementById('scannerCard');
+  const outer = card.parentElement;
+  outer.addEventListener('mousemove', (e) => {
+    const r = card.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    card.style.transform = `rotateX(${(-y*7).toFixed(2)}deg) rotateY(${(x*9).toFixed(2)}deg)`;
+  });
+  outer.addEventListener('mouseleave', () => {
+    card.style.transform = 'rotateX(0deg) rotateY(0deg)';
+  });
+})();
+
+// ---------- Scan form ----------
+const form = document.getElementById('scanForm');
+const btn = document.getElementById('scanBtn');
+const errorBox = document.getElementById('errorBox');
+const result = document.getElementById('result');
+const gaugeFill = document.getElementById('gaugeFill');
+const pctNum = document.getElementById('pctNum');
+const verdictBadge = document.getElementById('verdictBadge');
+const verdictUrl = document.getElementById('verdictUrl');
+const reasonsList = document.getElementById('reasonsList');
+
+const CIRC = 2 * Math.PI * 40;
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = document.getElementById('urlInput').value.trim();
+  errorBox.style.display = 'none';
+  if(!url){ errorBox.textContent = 'Please enter a URL.'; errorBox.style.display='block'; return; }
+
+  btn.disabled = true;
+  btn.innerHTML = 'Scanning…';
+
+  try{
+    const res = await fetch('/api/check', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url})
+    });
+    const data = await res.json();
+
+    if(!data.ok){
+      errorBox.textContent = data.error || 'Something went wrong.';
+      errorBox.style.display = 'block';
+      result.classList.remove('show');
+      return;
+    }
+
+    const pct = data.probability;
+    const isPhish = data.prediction === 'phishing';
+    const color = isPhish ? getComputedStyle(document.documentElement).getPropertyValue('--danger') : getComputedStyle(document.documentElement).getPropertyValue('--safe');
+
+    pctNum.textContent = pct + '%';
+    gaugeFill.setAttribute('stroke', color.trim());
+    gaugeFill.style.strokeDasharray = `${(pct/100)*CIRC} ${CIRC}`;
+
+    verdictBadge.textContent = isPhish ? 'Phishing' : 'Legitimate';
+    verdictBadge.className = 'verdict-badge ' + (isPhish ? 'phishing' : 'legitimate');
+    verdictUrl.textContent = data.url;
+
+    reasonsList.innerHTML = '';
+    (data.reasons || []).forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'reason ' + r.flag;
+      const iconMap = {bad:'✕', warn:'!', good:'✓'};
+      div.innerHTML = `<span class="rdot">${iconMap[r.flag] || '•'}</span><span>${r.text}</span>`;
+      reasonsList.appendChild(div);
+    });
+
+    result.classList.add('show');
+  }catch(err){
+    errorBox.textContent = 'Could not reach the server. Is app.py running?';
+    errorBox.style.display = 'block';
+  }finally{
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> Scan';
+  }
+});
+</script>
+
+</body>
+</html>
+
